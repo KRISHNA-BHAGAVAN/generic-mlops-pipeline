@@ -1,0 +1,90 @@
+groups:
+  # ─── API / System Alerts ─────────────────────────────────────────────────
+  - name: mlops_api_alerts
+    interval: 30s
+    rules:
+      # High API Response Latency (p95 > 1s for 5 min)
+      - alert: HighAPILatency
+        expr: histogram_quantile(0.95, rate(mlops_api_request_duration_seconds_bucket[5m])) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High API latency detected"
+          description: "API p95 latency is {{ $value }}s (threshold: 1.0s)"
+
+      # High Error Rate (>5% errors for 5 min)
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(mlops_api_request_total{status=~"5.."}[5m]))
+            /
+            sum(rate(mlops_api_request_total[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # Prediction Errors Spike (>10 errors in 5 min)
+      - alert: PredictionErrors
+        expr: increase(mlops_prediction_errors_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: model
+        annotations:
+          summary: "Prediction errors detected"
+          description: "{{ $value }} prediction errors in last 5 minutes"
+
+      # Slow Model Loading (p95 > 5s)
+      - alert: SlowModelLoading
+        expr: histogram_quantile(0.95, rate(mlops_model_load_duration_seconds_bucket[5m])) > 5.0
+        for: 5m
+        labels:
+          severity: warning
+          component: model
+        annotations:
+          summary: "Slow model loading"
+          description: "Model load p95 latency is {{ $value }}s (threshold: 5.0s)"
+
+      # Service Down
+      - alert: ServiceDown
+        expr: up{job="fastapi-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: service
+        annotations:
+          summary: "FastAPI service is down"
+          description: "FastAPI inference service is not responding"
+
+  # ─── Drift Alerts (Phase 1.2) ───────────────────────────────────────────
+  - name: mlops_drift_alerts
+    interval: 1h
+    rules:
+      # Data Drift Detected
+      - alert: DataDriftDetected
+        expr: mlops_data_drift_detected == 1
+        for: 1h
+        labels:
+          severity: warning
+          component: data
+        annotations:
+          summary: "Data drift detected"
+          description: "Data drift has been detected in production data"
+
+      # High Number of Drifted Columns
+      - alert: HighDriftColumnCount
+        expr: mlops_drifted_columns_count > 5
+        for: 1h
+        labels:
+          severity: critical
+          component: data
+        annotations:
+          summary: "Multiple columns drifted"
+          description: "{{ $value }} columns have drifted from reference distribution"

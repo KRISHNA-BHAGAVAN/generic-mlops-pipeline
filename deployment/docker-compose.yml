@@ -1,0 +1,91 @@
+services:
+  # ─── FastAPI Inference Service ───────────────────────────────────────────
+  fastapi:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    environment:
+      APP_PORT: 8000
+      LOG_LEVEL: INFO
+    volumes:
+      - ../src:/app/src
+      - ../deployment/app.py:/app/deployment/app.py
+    networks:
+      - mlops
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # ─── Prometheus (Metrics Collection) ─────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus.rules.yml:/etc/prometheus/prometheus.rules.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+    networks:
+      - mlops
+    restart: unless-stopped
+
+  # ─── Grafana (Visualization) ─────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../monitoring/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ../monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    networks:
+      - mlops
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # ─── Alertmanager (Alert Routing) ────────────────────────────────────────
+  alertmanager:
+    image: prom/alertmanager:latest
+    ports:
+      - "9093:9093"
+    volumes:
+      - ../monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    networks:
+      - mlops
+    restart: unless-stopped
+
+  # ─── Prometheus Pushgateway (Batch Metrics) ──────────────────────────────
+  pushgateway:
+    image: prom/pushgateway:latest
+    ports:
+      - "9091:9091"
+    networks:
+      - mlops
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:
+
+networks:
+  mlops:
+    driver: bridge

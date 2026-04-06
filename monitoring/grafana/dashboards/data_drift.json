@@ -1,0 +1,88 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "options": { "0": { "text": "No Drift", "color": "green" }, "1": { "text": "DRIFT DETECTED", "color": "red" } }, "type": "value" }
+          ]
+        }
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Data Drift Status",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "mlops_data_drift_detected",
+          "legendFormat": "Drift Detected"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "title": "Drifted Columns Count",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "mlops_drifted_columns_count",
+          "legendFormat": "Count"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
+      "id": 3,
+      "title": "Drift Trend (7 days)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "mlops_drifted_columns_count",
+          "legendFormat": "Drifted Columns"
+        },
+        {
+          "expr": "mlops_data_drift_detected",
+          "legendFormat": "Drift Status"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["mlops", "drift"],
+  "templating": { "list": [] },
+  "time": { "from": "now-7d", "to": "now" },
+  "title": "MLOps Data Drift Detection",
+  "uid": "mlops-data-drift"
+}

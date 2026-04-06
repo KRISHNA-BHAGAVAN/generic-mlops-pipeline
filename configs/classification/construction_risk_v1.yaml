@@ -1,0 +1,59 @@
+# ─────────────────────────────────────────────────────────────
+# Experiment: Predict construction task risk level (classification)
+# Dataset: Construction project tasks
+# ─────────────────────────────────────────────────────────────
+
+experiment_name: "construction_risk_rf_v1"
+user: "krishna"
+
+# Task definition
+task_type: "classification"
+target_column: "Risk_Level"
+feature_columns:
+  - "Task_Duration_Days"
+  - "Labor_Required"
+  - "Equipment_Units"
+  - "Material_Cost_USD"
+  - "Start_Constraint"
+  - "Resource_Constraint_Score"
+  - "Site_Constraint_Score"
+  - "Dependency_Count"
+
+# Dataset
+dataset_source: "data/raw/construction_dataset.csv"
+
+# Model
+model_type: "random_forest_classification"
+model_params:
+  n_estimators: 100
+  max_depth: 15
+  class_weight: "balanced"
+  random_state: 42
+
+# Preprocessing
+preprocessing:
+  - type: "normalize"
+    columns:
+      - "Material_Cost_USD"
+      - "Task_Duration_Days"
+
+# Splitting
+split_strategy: "stratified"
+test_size: 0.2
+random_state: 42
+
+# Metrics
+metrics:
+  - "accuracy"
+  - "precision"
+  - "recall"
+  - "f1"
+
+# MLflow
+mlflow_tags:
+  team: "engineering"
+  priority: "medium"
+  model_family: "random_forest"
+
+# Registry
+registry_name: "construction_risk"

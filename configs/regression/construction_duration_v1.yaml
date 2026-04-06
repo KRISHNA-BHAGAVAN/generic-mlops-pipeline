@@ -1,0 +1,58 @@
+# ─────────────────────────────────────────────────────────────
+# Experiment: Predict construction task duration (regression)
+# Dataset: Construction project tasks
+# ─────────────────────────────────────────────────────────────
+
+experiment_name: "construction_duration_rf_v1"
+user: "krishna"
+
+# Task definition
+task_type: "regression"
+target_column: "Task_Duration_Days"
+feature_columns:
+  - "Labor_Required"
+  - "Equipment_Units"
+  - "Material_Cost_USD"
+  - "Start_Constraint"
+  - "Resource_Constraint_Score"
+  - "Site_Constraint_Score"
+  - "Dependency_Count"
+
+# Dataset
+dataset_source: "data/raw/construction_dataset.csv"
+
+# Model
+model_type: "random_forest_regression"
+model_params:
+  n_estimators: 100
+  max_depth: 10
+  min_samples_split: 5
+  random_state: 42
+
+# Preprocessing
+preprocessing:
+  - type: "normalize"
+    columns:
+      - "Material_Cost_USD"
+      - "Start_Constraint"
+
+# Splitting
+split_strategy: "random"
+test_size: 0.2
+random_state: 42
+
+# Metrics
+metrics:
+  - "mse"
+  - "rmse"
+  - "mae"
+  - "r2"
+
+# MLflow
+mlflow_tags:
+  team: "engineering"
+  priority: "high"
+  model_family: "random_forest"
+
+# Registry
+registry_name: "construction_duration"
