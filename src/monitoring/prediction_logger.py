@@ -1,20 +1,28 @@
 """
 Prediction logger for monitoring.
 
-Logs all predictions to a SQLite database for later analysis
+Logs all predictions to PostgreSQL for later analysis
 by the batch monitoring job and EvidentlyAI drift detection.
+
+Uses SQLAlchemy Core for database interaction via the shared
+``database`` module.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from src.utils.helpers import PROJECT_ROOT
+from sqlalchemy import func, select
+
+from src.monitoring.database import (
+    ensure_tables,
+    get_db_url,
+    get_engine,
+    predictions_table,
+)
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -22,48 +30,30 @@ logger = get_logger(__name__)
 
 class PredictionLogger:
     """
-    Log predictions to SQLite for monitoring and drift analysis.
+    Log predictions to PostgreSQL for monitoring and drift analysis.
 
     Stores model name, version, input features, prediction, and timestamp.
     """
 
-    def __init__(self, db_path: str | None = None):
+    def __init__(self, db_url: str | None = None):
         """
         Initialize prediction logger.
 
         Args:
-            db_path: Path to SQLite database file.
-                     Defaults to PREDICTION_DB_PATH env var or predictions.db in project root.
+            db_url: SQLAlchemy database URL.
+                    Defaults to PREDICTION_DB_URL env var or derived from DB_* vars.
         """
-        if db_path is None:
-            db_path = os.getenv("PREDICTION_DB_PATH", str(PROJECT_ROOT / "predictions.db"))
-
-        self.db_path = db_path
+        self._db_url = db_url or get_db_url()
+        self._engine = get_engine(self._db_url)
         self._init_db()
-        logger.info(f"Prediction logger initialized: {self.db_path}")
+        logger.info(
+            f"Prediction logger initialized: "
+            f"{self._engine.url.render_as_string(hide_password=True)}"
+        )
 
     def _init_db(self) -> None:
         """Create the predictions table if it doesn't exist."""
-        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS predictions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    model_name TEXT NOT NULL,
-                    model_version TEXT NOT NULL,
-                    features_json TEXT NOT NULL,
-                    prediction TEXT NOT NULL,
-                    prediction_proba TEXT,
-                    timestamp TEXT NOT NULL,
-                    latency_seconds REAL
-                )
-            """)
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_predictions_model
-                ON predictions(model_name, timestamp)
-            """)
-            conn.commit()
+        ensure_tables(self._engine)
 
     def log_prediction(
         self,
@@ -86,25 +76,20 @@ class PredictionLogger:
             latency_seconds: Optional inference latency.
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._engine.begin() as conn:
                 conn.execute(
-                    """
-                    INSERT INTO predictions
-                    (model_name, model_version, features_json, prediction,
-                     prediction_proba, timestamp, latency_seconds)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        model_name,
-                        model_version,
-                        json.dumps(features),
-                        json.dumps(prediction),
-                        json.dumps(prediction_proba) if prediction_proba else None,
-                        datetime.now(timezone.utc).isoformat(),
-                        latency_seconds,
-                    ),
+                    predictions_table.insert().values(
+                        model_name=model_name,
+                        model_version=model_version,
+                        features_json=json.dumps(features),
+                        prediction=json.dumps(prediction),
+                        prediction_proba=(
+                            json.dumps(prediction_proba) if prediction_proba else None
+                        ),
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                        latency_seconds=latency_seconds,
+                    )
                 )
-                conn.commit()
         except Exception as e:
             logger.error(f"Failed to log prediction: {e}")
 
@@ -125,20 +110,15 @@ class PredictionLogger:
         Returns:
             List of prediction dictionaries.
         """
-        cutoff = datetime.now(timezone.utc).isoformat()
+        stmt = (
+            select(predictions_table)
+            .where(predictions_table.c.model_name == model_name)
+            .order_by(predictions_table.c.timestamp.desc())
+            .limit(limit)
+        )
 
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.execute(
-                """
-                SELECT * FROM predictions
-                WHERE model_name = ?
-                ORDER BY timestamp DESC
-                LIMIT ?
-                """,
-                (model_name, limit),
-            )
-            rows = cursor.fetchall()
+        with self._engine.connect() as conn:
+            rows = conn.execute(stmt).mappings().all()
 
         predictions = []
         for row in rows:
@@ -153,12 +133,12 @@ class PredictionLogger:
 
     def get_prediction_count(self, model_name: str | None = None) -> int:
         """Get total prediction count, optionally filtered by model."""
-        with sqlite3.connect(self.db_path) as conn:
-            if model_name:
-                cursor = conn.execute(
-                    "SELECT COUNT(*) FROM predictions WHERE model_name = ?",
-                    (model_name,),
-                )
-            else:
-                cursor = conn.execute("SELECT COUNT(*) FROM predictions")
-            return cursor.fetchone()[0]
+        if model_name:
+            stmt = select(func.count()).select_from(predictions_table).where(
+                predictions_table.c.model_name == model_name
+            )
+        else:
+            stmt = select(func.count()).select_from(predictions_table)
+
+        with self._engine.connect() as conn:
+            return conn.execute(stmt).scalar() or 0

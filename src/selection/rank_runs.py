@@ -116,3 +116,47 @@ def get_best_run(
     """
     runs = rank_runs(experiment_name, metric, task_type, top_k=1, client=client)
     return runs[0] if runs else None
+
+
+if __name__ == "__main__":
+    import click
+
+    @click.command()
+    @click.option("--experiment-name", required=True, help="MLflow experiment name")
+    @click.option("--metric", required=True, help="Metric to rank by (e.g. mse, r2)")
+    @click.option("--task-type", default=None, help="Optional task type filter")
+    @click.option("--top-k", default=5, type=int, help="Number of runs to return")
+    @click.option("--auto-promote", is_flag=True, help="Auto promote the best run to candidate")
+    @click.option("--model-name", default=None, help="Registered model name (required if auto-promote)")
+    def main(experiment_name, metric, task_type, top_k, auto_promote, model_name):
+        """Rank MLflow runs and optionally auto-promote the best one."""
+        runs = rank_runs(experiment_name, metric, task_type, top_k)
+        
+        if not runs:
+            logger.warning(f"No runs found for experiment '{experiment_name}'")
+            return
+            
+        print(f"Top {len(runs)} runs for metric '{metric}':")
+        for i, run in enumerate(runs):
+            print(f"{i+1}. Run {run['run_id']} ({run['run_name']}) | {metric}: {run['value']:.4f} | status: {run['status']}")
+            
+        if auto_promote:
+            if not model_name:
+                logger.error("--model-name is required when using --auto-promote")
+                return
+                
+            best_run = runs[0]
+            print(f"\nAuto-promoting best run {best_run['run_id']} to model '{model_name}' as candidate...")
+            from src.selection.promote_model import promote_model
+            from src.models.registry import setup_mlflow
+            
+            # promote_model registers and aliases the model
+            setup_mlflow(experiment_name)
+            promote_model(
+                run_id=best_run['run_id'],
+                model_name=model_name,
+                alias="candidate"
+            )
+            print("Promotion complete.")
+            
+    main()

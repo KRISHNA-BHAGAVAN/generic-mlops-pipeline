@@ -210,6 +210,63 @@ def _log_config_artifact(config: ExperimentConfig) -> None:
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def log_reference_predictions_artifact(
+    model,
+    X_ref,
+    artifact_dir: str = "reference_data",
+    filename: str = "reference_predictions.parquet",
+) -> None:
+    """
+    Persist true reference predictions as an MLflow artifact.
+
+    Runs model.predict(X_ref) to produce predictions on the training/reference
+    dataset and saves a parquet file containing all feature columns plus a
+    ``prediction`` column. This file is the ground-truth baseline used by the
+    batch monitor for *prediction drift* detection (i.e. comparing how the
+    model's output distribution has shifted, not comparing against labels).
+
+    Must be called within an active MLflow run.
+
+    Args:
+        model: Trained sklearn-compatible estimator.
+        X_ref: Reference feature DataFrame (typically X_train or a held-out
+               validation set used during training).
+        artifact_dir: MLflow artifact sub-directory to store the file in.
+        filename: Parquet filename.
+    """
+    import pandas as pd
+
+    run = mlflow.active_run()
+    if run is None:
+        logger.warning(
+            "log_reference_predictions_artifact called with no active MLflow run — skipping."
+        )
+        return
+
+    try:
+        ref_preds = model.predict(X_ref)
+        ref_df = X_ref.copy().reset_index(drop=True)
+        ref_df["prediction"] = ref_preds
+
+        tmp_dir = tempfile.mkdtemp(prefix="mlops_refpreds_")
+        out_path = os.path.join(tmp_dir, filename)
+        ref_df.to_parquet(out_path, index=False)
+
+        mlflow.log_artifact(out_path, artifact_path=artifact_dir)
+        logger.info(
+            f"Reference predictions artifact logged: "
+            f"{artifact_dir}/{filename} ({len(ref_df)} rows, run={run.info.run_id})"
+        )
+
+    except Exception as e:
+        logger.warning(f"Could not log reference predictions artifact: {e}")
+    finally:
+        try:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
 def resolve_model_uri_from_run(run_id: str) -> str:
     """
     Discover the correct model URI for a given MLflow run ID.

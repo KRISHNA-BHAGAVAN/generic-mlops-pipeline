@@ -24,7 +24,7 @@ from src.data.load_data import load_dataset
 from src.data.validate import validate_dataset
 from src.features.build_features import prepare_features, split_data
 from src.models.evaluate import evaluate_model, generate_evaluation_plots
-from src.models.registry import log_experiment_run, setup_mlflow
+from src.models.registry import log_experiment_run, log_reference_predictions_artifact, setup_mlflow
 from src.models.train import train_model
 from src.pipelines.exceptions import ConfigError, DatasetError, MLOpsException, ModelError
 from src.utils.logger import get_logger, setup_root_logger
@@ -154,6 +154,13 @@ def main(
         click.echo("💾 Step 10: Logging to MLflow...")
         run_id, model_uri = log_experiment_run(exp_config, model, metadata, metrics, plots)
         click.echo(f"   ✓ MLflow run ID: {run_id}")
+
+        # ── Step 10b: Persist reference predictions artifact ──
+        # Saves model.predict(X_train) alongside features so batch_monitor
+        # can use it as the TRUE prediction drift baseline (not ground-truth labels).
+        click.echo("📌 Step 10b: Logging reference predictions artifact...")
+        log_reference_predictions_artifact(model, X_train)
+        click.echo("   ✓ Reference predictions artifact logged to MLflow")
 
         # ── Step 11: Optional registration ──
         if register and exp_config.registry_name:

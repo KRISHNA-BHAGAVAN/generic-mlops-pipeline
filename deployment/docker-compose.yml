@@ -1,4 +1,24 @@
 services:
+  # ─── PostgreSQL (Shared State) ────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-mlops}
+      POSTGRES_USER: ${DB_USER:-mlops}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mlops}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mlops
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mlops}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ─── FastAPI Inference Service ───────────────────────────────────────────
   fastapi:
     build:
@@ -17,7 +37,10 @@ services:
     networks:
       - mlops
     depends_on:
-      - prometheus
+      postgres:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
     restart: unless-stopped
 
   # ─── Prometheus (Metrics Collection) ─────────────────────────────────────
@@ -28,6 +51,8 @@ services:
     volumes:
       - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ../monitoring/prometheus.rules.yml:/etc/prometheus/prometheus.rules.yml:ro
+      # Grafana Cloud remote_write token (local secret; gitignored)
+      - ../.secrets/grafana_cloud_metrics_token:/run/secrets/grafana_cloud_metrics_token:ro
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -35,6 +60,9 @@ services:
       - "--storage.tsdb.retention.time=15d"
       - "--web.console.libraries=/etc/prometheus/console_libraries"
       - "--web.console.templates=/etc/prometheus/consoles"
+      - "--enable-feature=expand-external-labels"
+    environment:
+      PROMETHEUS_DEVELOPER: ${PROMETHEUS_DEVELOPER:-anonymous}
     networks:
       - mlops
     restart: unless-stopped
@@ -81,7 +109,37 @@ services:
       - mlops
     restart: unless-stopped
 
+  # ─── Prometheus Cloud Mode (Grafana Cloud) ───────────────────────────────
+  # Use this profile for shared dashboards via Grafana Cloud:
+  #   docker compose --profile cloud up -d
+  prometheus-cloud:
+    image: prom/prometheus:latest
+    profiles:
+      - cloud
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../monitoring/prometheus.cloud.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus.rules.yml:/etc/prometheus/prometheus.rules.yml:ro
+      - ../.secrets/grafana_cloud_metrics_token:/run/secrets/grafana_cloud_metrics_token:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--enable-feature=expand-external-labels"
+    environment:
+      PROMETHEUS_DEVELOPER: ${PROMETHEUS_DEVELOPER:-anonymous}
+      GRAFANA_CLOUD_PROM_URL: ${GRAFANA_CLOUD_PROM_URL}
+      GRAFANA_CLOUD_PROM_USERNAME: ${GRAFANA_CLOUD_PROM_USERNAME}
+    networks:
+      - mlops
+    restart: unless-stopped
+
 volumes:
+  postgres_data:
   prometheus_data:
   grafana_data:
   alertmanager_data:

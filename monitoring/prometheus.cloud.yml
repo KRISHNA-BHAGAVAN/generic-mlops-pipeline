@@ -1,3 +1,16 @@
+# =============================================================================
+# Prometheus Cloud Mode Configuration
+# =============================================================================
+# Use this config instead of prometheus.yml when forwarding metrics to
+# Grafana Cloud.  Start with:
+#   docker compose --profile cloud up -d
+#
+# Prerequisites:
+#   1. Set GRAFANA_CLOUD_PROM_URL and GRAFANA_CLOUD_PROM_USERNAME in .env
+#   2. Place your Grafana Cloud API token in:
+#      .secrets/grafana_cloud_metrics_token
+# =============================================================================
+
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -6,12 +19,12 @@ global:
     env: "dev"
     developer: "${PROMETHEUS_DEVELOPER}"
 
+# ── Remote Write to Grafana Cloud ──────────────────────────────────────────
 remote_write:
-  - url: https://prometheus-prod-43-prod-ap-south-1.grafana.net/api/prom/push
+  - url: "${GRAFANA_CLOUD_PROM_URL}"
     basic_auth:
-      username: "3095946"
+      username: "${GRAFANA_CLOUD_PROM_USERNAME}"
       password_file: /run/secrets/grafana_cloud_metrics_token
-
 
 # Alertmanager configuration
 alerting:
