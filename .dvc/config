@@ -1,0 +1,9 @@
+[core]
+    remote = origin
+    # Use a repo-local site cache so DVC can write state/index files in
+    # sandboxed/dev environments where the global cache directory may be read-only.
+    site_cache_dir = .dvc/site-cache
+
+[remote "origin"]
+    url = s3://dvc
+    endpointurl = https://dagshub.com/krishnabhagavan910/generic-mlops-pipeline.s3
