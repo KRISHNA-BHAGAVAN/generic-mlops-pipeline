@@ -88,3 +88,30 @@ groups:
         annotations:
           summary: "Multiple columns drifted"
           description: "{{ $value }} columns have drifted from reference distribution"
+
+      # Prediction Drift Detected
+      - alert: PredictionDriftDetected
+        expr: mlops_prediction_drift_detected == 1
+        for: 1h
+        labels:
+          severity: warning
+          component: model
+        annotations:
+          summary: "Model prediction drift detected"
+          description: "Prediction distribution has drifted (score={{ $value }}) vs training baseline"
+
+      # Batch Monitoring Job Stale
+      # PushGateway never expires metrics on its own — this alert detects when
+      # the batch job has stopped pushing (i.e. the job is failing or not running).
+      # Threshold: 25 h (1 h buffer over the expected 24-h cadence).
+      - alert: BatchMonitoringJobStale
+        expr: time() - mlops_batch_job_last_run_timestamp > 90000
+        for: 30m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: "Batch monitoring job has not run recently"
+          description: >
+            Last batch monitoring push was {{ $value | humanizeDuration }} ago.
+            Check that schedule_monitoring.py is running and PushGateway is reachable.

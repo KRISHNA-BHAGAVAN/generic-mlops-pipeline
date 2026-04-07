@@ -14,8 +14,9 @@ This pipeline enables ML teams to run diverse experiments across different datas
 - 🚀 **FastAPI inference** — Production-ready serving with batch prediction support
 - 📈 **Prometheus metrics** — Request latency, prediction counts, model load times, error rates
 - 📉 **Grafana dashboards** — System health, model performance, data drift visualization
-- 🔍 **Drift detection** — EvidentlyAI-based data drift monitoring with batch analysis
+- 🔍 **Drift detection** — EvidentlyAI data + prediction drift (prediction baseline logged to MLflow)
 - 🔔 **Alert rules** — Configurable alerts for latency, errors, drift (console + optional Slack)
+- ⏱️ **Batch monitoring scheduler** — APScheduler daemon with persistent job store + cron hook
 - 🐳 **Docker Compose** — Full monitoring stack in one command
 - ✅ **25 unit tests** — Config, model, and pipeline coverage
 
@@ -85,6 +86,32 @@ docker compose -f deployment/docker-compose.yml up -d
 # Grafana:      http://localhost:3000 (admin/admin)
 # Prometheus:   http://localhost:9090
 # AlertManager: http://localhost:9093
+```
+
+### Run Batch Monitoring (one-shot)
+
+```bash
+python -m src.monitoring.batch_monitor \
+    --model-name construction_duration \
+    --reference-data-path data/processed/train_features.csv \
+    --feature-columns "feat1,feat2" \
+    --hours 24
+```
+
+**Note:** Prediction drift uses the MLflow artifact `reference_data/reference_predictions.parquet`
+logged during training. If the model was trained before this feature or no
+`champion` alias exists, prediction drift is skipped (feature drift still runs).
+
+### Run Batch Monitoring Scheduler (daemon)
+
+```bash
+export MONITORING_MODEL_NAME=construction_duration
+export MONITORING_REFERENCE_DATA_PATH=data/processed/train_features.csv
+export MONITORING_FEATURE_COLUMNS="feat1,feat2"
+export MONITORING_LOOKBACK_HOURS=24
+export BATCH_MONITOR_CRON_HOUR=2
+export BATCH_MONITOR_CRON_MINUTE=0
+python scripts/schedule_monitoring.py
 ```
 
 ### Run Tests

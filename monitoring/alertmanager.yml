@@ -12,9 +12,8 @@ receivers:
   - name: "default"
     # Console/webhook receiver (default — no external dependencies)
     webhook_configs: []
-    # Uncomment below for Slack integration when webhook is available:
-    # slack_configs:
-    #   - api_url: "${SLACK_WEBHOOK_URL}"
-    #     channel: "#ml-alerts"
-    #     title: "{{ .GroupLabels.alertname }}"
-    #     text: "{{ range .Alerts }}{{ .Annotations.description }}{{ end }}"
+    slack_configs:
+      - api_url: "${SLACK_WEBHOOK_URL:-}"
+        channel: "#ml-alerts"
+        title: "{{ .GroupLabels.alertname }}"
+        text: "{{ range .Alerts }}{{ .Annotations.description }}{{ end }}"

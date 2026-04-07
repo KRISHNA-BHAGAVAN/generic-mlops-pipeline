@@ -218,6 +218,12 @@ mlartifacts/
 # Runtime artifacts
 predictions.db
 predictions.db-*
+scheduler_jobs.db
+scheduler_jobs.db-*
+
+# Secrets (Grafana Cloud tokens etc.)
+.secrets/*
+!.secrets/.gitkeep
 
 # Agent / IDE local rules
 .agents/

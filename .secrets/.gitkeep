@@ -1,0 +1,2 @@
+# This directory holds local secret files (e.g. Grafana Cloud API token).
+# Files here are gitignored except this .gitkeep placeholder.
