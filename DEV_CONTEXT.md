@@ -133,11 +133,11 @@ uvicorn deployment.app:app --host 0.0.0.0 --port 8000
 
 ### Monitoring
 ```bash
-# Local mode (default)
+# Start all monitoring services (local mode by default)
 docker compose -f deployment/docker-compose.yml up -d
 
-# Cloud mode (Grafana Cloud shared dashboards)
-docker compose -f deployment/docker-compose.yml --profile cloud up -d
+# Cloud mode: set GRAFANA_CLOUD_PROM_URL in .env to auto-enable Grafana Cloud forwarding
+# Prometheus auto-selects local vs cloud config based on this env var
 ```
 
 ### Batch Monitoring (one-shot)

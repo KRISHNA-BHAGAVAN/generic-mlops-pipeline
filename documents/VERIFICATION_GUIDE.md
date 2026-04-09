@@ -154,9 +154,9 @@ GRAFANA_CLOUD_PROM_USERNAME=<your-cloud-username>
 # 2. Place API token in secrets file
 echo "<your-api-token>" > .secrets/grafana_cloud_metrics_token
 
-# 3. Start cloud-mode Prometheus
-docker compose -f deployment/docker-compose.yml --profile cloud up -d
+# 3. Restart the monitoring stack
+docker compose -f deployment/docker-compose.yml up -d
 ```
 
-* **What is this?** Switches from local-only Prometheus to cloud mode, where metrics are forwarded to Grafana Cloud via `remote_write`. Each developer's metrics are tagged with their `PROMETHEUS_DEVELOPER` label to avoid collisions.
-* **How to verify?** Log into Grafana Cloud → Explore → query `up{developer="your-name"}`. You should see your local scrape targets.
+* **What is this?** Switches from local-only Prometheus to cloud mode. When `GRAFANA_CLOUD_PROM_URL` is set, the Prometheus entrypoint script auto-selects `prometheus.cloud.yml` which includes `remote_write` to forward metrics to Grafana Cloud. Each developer's metrics are tagged with their `PROMETHEUS_DEVELOPER` label to avoid collisions.
+* **How to verify?** Check Prometheus logs: `docker logs deployment-prometheus-1 --tail 5`. You should see `[entrypoint] Cloud mode — remote_write enabled`. Then log into Grafana Cloud → Explore → query `up{developer="your-name"}`.

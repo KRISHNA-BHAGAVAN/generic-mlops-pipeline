@@ -13,7 +13,10 @@ receivers:
     # Console/webhook receiver (default — no external dependencies)
     webhook_configs: []
     slack_configs:
-      - api_url: "${SLACK_WEBHOOK_URL:-}"
+      # Keep Slack webhook out of git by mounting it as a secret file.
+      # Create locally:
+      #   echo "https://hooks.slack.com/services/..." > .secrets/slack_webhook_url
+      - api_url_file: /run/secrets/slack_webhook_url
         channel: "#ml-alerts"
         title: "{{ .GroupLabels.alertname }}"
         text: "{{ range .Alerts }}{{ .Annotations.description }}{{ end }}"

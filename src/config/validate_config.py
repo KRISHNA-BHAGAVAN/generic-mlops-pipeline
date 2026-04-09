@@ -23,7 +23,6 @@ class TaskType(str, Enum):
     REGRESSION = "regression"
     CLASSIFICATION = "classification"
 
-
 class SplitStrategy(str, Enum):
     """Supported data-splitting strategies."""
     RANDOM = "random"

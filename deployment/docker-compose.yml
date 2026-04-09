@@ -44,25 +44,31 @@ services:
     restart: unless-stopped
 
   # ─── Prometheus (Metrics Collection) ─────────────────────────────────────
+  # Auto-selects local vs cloud mode based on GRAFANA_CLOUD_PROM_URL:
+  #   - If GRAFANA_CLOUD_PROM_URL is set → uses prometheus.cloud.yml (remote_write)
+  #   - If empty/unset → uses prometheus.yml (local-only)
   prometheus:
     image: prom/prometheus:latest
     ports:
       - "9090:9090"
-    volumes:
-      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ../monitoring/prometheus.rules.yml:/etc/prometheus/prometheus.rules.yml:ro
-      # Grafana Cloud remote_write token (local secret; gitignored)
-      - ../.secrets/grafana_cloud_metrics_token:/run/secrets/grafana_cloud_metrics_token:ro
-      - prometheus_data:/prometheus
+    entrypoint: ["/bin/sh", "/etc/prometheus/prometheus-entrypoint.sh"]
     command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=15d"
       - "--web.console.libraries=/etc/prometheus/console_libraries"
       - "--web.console.templates=/etc/prometheus/consoles"
-      - "--enable-feature=expand-external-labels"
     environment:
       PROMETHEUS_DEVELOPER: ${PROMETHEUS_DEVELOPER:-anonymous}
+    env_file:
+      - ../.env
+    volumes:
+      - ../monitoring/prometheus-entrypoint.sh:/etc/prometheus/prometheus-entrypoint.sh:ro
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus.cloud.yml:/etc/prometheus/prometheus.cloud.yml:ro
+      - ../monitoring/prometheus.rules.yml:/etc/prometheus/prometheus.rules.yml:ro
+      # Grafana Cloud remote_write token (local secret; gitignored)
+      - ../.secrets/grafana_cloud_metrics_token:/run/secrets/grafana_cloud_metrics_token:ro
+      - prometheus_data:/prometheus
     networks:
       - mlops
     restart: unless-stopped
@@ -92,6 +98,8 @@ services:
       - "9093:9093"
     volumes:
       - ../monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # Slack webhook URL (local secret; gitignored)
+      - ../.secrets/slack_webhook_url:/run/secrets/slack_webhook_url:ro
       - alertmanager_data:/alertmanager
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
@@ -105,35 +113,6 @@ services:
     image: prom/pushgateway:latest
     ports:
       - "9091:9091"
-    networks:
-      - mlops
-    restart: unless-stopped
-
-  # ─── Prometheus Cloud Mode (Grafana Cloud) ───────────────────────────────
-  # Use this profile for shared dashboards via Grafana Cloud:
-  #   docker compose --profile cloud up -d
-  prometheus-cloud:
-    image: prom/prometheus:latest
-    profiles:
-      - cloud
-    ports:
-      - "9090:9090"
-    volumes:
-      - ../monitoring/prometheus.cloud.yml:/etc/prometheus/prometheus.yml:ro
-      - ../monitoring/prometheus.rules.yml:/etc/prometheus/prometheus.rules.yml:ro
-      - ../.secrets/grafana_cloud_metrics_token:/run/secrets/grafana_cloud_metrics_token:ro
-      - prometheus_data:/prometheus
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--storage.tsdb.retention.time=15d"
-      - "--web.console.libraries=/etc/prometheus/console_libraries"
-      - "--web.console.templates=/etc/prometheus/consoles"
-      - "--enable-feature=expand-external-labels"
-    environment:
-      PROMETHEUS_DEVELOPER: ${PROMETHEUS_DEVELOPER:-anonymous}
-      GRAFANA_CLOUD_PROM_URL: ${GRAFANA_CLOUD_PROM_URL}
-      GRAFANA_CLOUD_PROM_USERNAME: ${GRAFANA_CLOUD_PROM_USERNAME}
     networks:
       - mlops
     restart: unless-stopped

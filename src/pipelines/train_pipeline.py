@@ -95,12 +95,12 @@ def main(
         )
 
         # ── Step 2: Load dataset ──
-        click.echo("📊 Step 2: Loading dataset...")
+        click.echo("\n📊 Step 2: Loading dataset...")
         df = load_dataset(exp_config.dataset_source)
         click.echo(f"   ✓ Dataset loaded: {df.shape[0]} rows × {df.shape[1]} columns")
 
         # ── Step 3: Validate config against data ──
-        click.echo("✅ Step 3: Validating config against data...")
+        click.echo("\n✅ Step 3: Validating config against data...")
         quality_report = validate_dataset(df, exp_config)
         click.echo(
             f"   ✓ Validation passed. "
@@ -115,22 +115,22 @@ def main(
             return
 
         # ── Step 4: Prepare features ──
-        click.echo("🔬 Step 4: Preparing features...")
+        click.echo("\n🔬 Step 4: Preparing features...")
         X, y, preprocessing_artifacts = prepare_features(df, exp_config)
         click.echo(f"   ✓ Features prepared: {X.shape[1]} features")
 
         # ── Step 5: Split data ──
-        click.echo("✂️  Step 5: Splitting data...")
+        click.echo("\n✂️  Step 5: Splitting data...")
         X_train, X_test, y_train, y_test = split_data(X, y, exp_config)
         click.echo(f"   ✓ Train: {len(X_train)}, Test: {len(X_test)}")
 
         # ── Step 6: Setup MLflow ──
-        click.echo("📡 Step 6: Setting up MLflow...")
+        click.echo("\n📡 Step 6: Setting up MLflow...")
         setup_mlflow(tracking_uri=mlflow_tracking_uri, experiment_name=exp_config.experiment_name)
         click.echo("   ✓ MLflow configured")
 
         # ── Step 7: Train model ──
-        click.echo(f"🏋️  Step 7: Training {exp_config.model_type}...")
+        click.echo(f"\n🏋️  Step 7: Training {exp_config.model_type}...")
         mlflow.start_run(run_name=exp_config.experiment_name)
 
         model, metadata = train_model(X_train, y_train, exp_config)
@@ -139,26 +139,26 @@ def main(
         )
 
         # ── Step 8: Evaluate ──
-        click.echo("📈 Step 8: Evaluating model...")
+        click.echo("\n📈 Step 8: Evaluating model...")
         metrics = evaluate_model(model, X_test, y_test, exp_config)
         for name, value in metrics.items():
             click.echo(f"   • {name}: {value:.4f}")
 
         # ── Step 9: Generate plots ──
-        click.echo("🎨 Step 9: Generating evaluation plots...")
+        click.echo("\n🎨 Step 9: Generating evaluation plots...")
         y_pred = model.predict(X_test)
         plots = generate_evaluation_plots(model, X_test, y_test, y_pred, exp_config)
         click.echo(f"   ✓ Generated {len(plots)} plots")
 
         # ── Step 10: Log to MLflow ──
-        click.echo("💾 Step 10: Logging to MLflow...")
+        click.echo("\n💾 Step 10: Logging to MLflow...")
         run_id, model_uri = log_experiment_run(exp_config, model, metadata, metrics, plots)
         click.echo(f"   ✓ MLflow run ID: {run_id}")
 
         # ── Step 10b: Persist reference predictions artifact ──
         # Saves model.predict(X_train) alongside features so batch_monitor
         # can use it as the TRUE prediction drift baseline (not ground-truth labels).
-        click.echo("📌 Step 10b: Logging reference predictions artifact...")
+        click.echo("\n📌 Step 10b: Logging reference predictions artifact...")
         log_reference_predictions_artifact(model, X_train)
         click.echo("   ✓ Reference predictions artifact logged to MLflow")
 
@@ -195,7 +195,6 @@ def main(
             mlflow.log_param("error", str(e)[:250])
             mlflow.end_run(status="FAILED")
         raise
-
 
 if __name__ == "__main__":
     main()

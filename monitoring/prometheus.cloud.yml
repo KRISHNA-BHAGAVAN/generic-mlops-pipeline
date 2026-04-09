@@ -2,13 +2,14 @@
 # Prometheus Cloud Mode Configuration
 # =============================================================================
 # Use this config instead of prometheus.yml when forwarding metrics to
-# Grafana Cloud.  Start with:
-#   docker compose --profile cloud up -d
+# Grafana Cloud.  Prometheus auto-selects this config when
+# GRAFANA_CLOUD_PROM_URL is set in .env.
 #
 # Prerequisites:
 #   1. Set GRAFANA_CLOUD_PROM_URL and GRAFANA_CLOUD_PROM_USERNAME in .env
 #   2. Place your Grafana Cloud API token in:
 #      .secrets/grafana_cloud_metrics_token
+#   3. Restart docker compose: docker compose -f deployment/docker-compose.yml up -d
 # =============================================================================
 
 global:
