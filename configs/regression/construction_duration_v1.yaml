@@ -48,11 +48,25 @@ metrics:
   - "mae"
   - "r2"
 
-# MLflow
+# Registry
+registry_name: "construction_duration"
+serialization_format: "skops"  # valid: "cloudpickle", "pickle", "skops"
+
+# MLflow Optional Metadata
+experiment_description: "Baseline regression experiment for construction task duration forecasting"
+experiment_tags:
+  user: "krishna"
+  project: "generic-mlops-pipeline"
 mlflow_tags:
   team: "engineering"
   priority: "high"
   model_family: "random_forest"
+run_name: "duration-rf-baseline-v1"
+run_description: "Tracks baseline RF model with explicit dataset lineage metadata"
+dataset_name: "Testing-dataset"
+dataset_source_uri: "https://dagshub.com/krishnabhagavan910/generic-mlops-pipeline/src/2af4d0aec5ac7b88f92ebba2e768cdd6095eeac0/data/raw/construction_dataset.csv"
+dataset_context: "training"
+dataset_tags:
+  split: "train+test from raw csv"
+  data_owner: "engineering"
 
-# Registry
-registry_name: "construction_duration"

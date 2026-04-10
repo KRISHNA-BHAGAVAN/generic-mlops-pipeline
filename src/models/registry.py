@@ -14,7 +14,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import mlflow
-import mlflow.sklearn
+from mlflow import sklearn as mlflow_sklearn
+from mlflow.data.pandas_dataset import from_pandas as mlflow_from_pandas
+from mlflow.models import infer_signature
 from mlflow.tracking import MlflowClient
 
 from src.config.validate_config import ExperimentConfig
@@ -25,9 +27,35 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _coerce_integer_columns_for_mlflow(df):
+    """
+    Cast integer columns to float64 for MLflow schema stability.
+
+    MLflow warns when inferred schemas contain integer columns because inference
+    payloads with missing values often upcast int -> float, causing schema
+    enforcement mismatches. Converting integers to float64 at logging time
+    avoids this class of errors.
+    """
+    try:
+        import pandas as pd
+    except Exception:
+        return df
+
+    if not isinstance(df, pd.DataFrame):
+        return df
+
+    out = df.copy()
+    for col in out.columns:
+        if pd.api.types.is_integer_dtype(out[col]) and not pd.api.types.is_bool_dtype(out[col]):
+            out[col] = out[col].astype("float64")
+    return out
+
+
 def setup_mlflow(
     tracking_uri: str | None = None,
     experiment_name: str | None = None,
+    experiment_description: str | None = None,
+    experiment_tags: Dict[str, str] | None = None,
 ) -> None:
     """
     Configure MLflow tracking URI and experiment.
@@ -37,6 +65,8 @@ def setup_mlflow(
     Args:
         tracking_uri: MLflow tracking URI. Reads from env if None.
         experiment_name: MLflow experiment name. Reads from env if None.
+        experiment_description: Optional experiment description shown in MLflow UI.
+        experiment_tags: Optional experiment-level tags.
     """
     load_env()
 
@@ -79,7 +109,43 @@ def setup_mlflow(
             else:
                 raise
 
+        # MLflow stores experiment description as the special note tag.
+        if experiment_description:
+            mlflow.set_experiment_tag("mlflow.note.content", experiment_description)
+        if experiment_tags:
+            mlflow.set_experiment_tags(experiment_tags)
+
     logger.info(f"MLflow configured: URI={uri}")
+
+
+def log_dataset_input(config: ExperimentConfig, df) -> None:
+    """Log dataset lineage and metadata for the active run."""
+    run = mlflow.active_run()
+    if run is None:
+        logger.warning("log_dataset_input called with no active MLflow run — skipping.")
+        return
+
+    try:
+        dataset_source = config.dataset_source_uri or config.dataset_source
+        print(f"Logging*** dataset input: source={dataset_source}, target_column={config.target_column}")
+        df_for_logging = _coerce_integer_columns_for_mlflow(df)
+        dataset = mlflow_from_pandas(
+            df=df_for_logging,
+            source=dataset_source,
+            targets=config.target_column,
+            name=config.dataset_name,
+        )
+        mlflow.log_input(
+            dataset=dataset,
+            context=config.dataset_context,
+            tags=config.dataset_tags or None,
+        )
+        logger.info(
+            "Dataset input logged: "
+            f"name={dataset.name}, source={dataset_source}, context={config.dataset_context}"
+        )
+    except Exception as e:
+        logger.warning(f"Could not log dataset input: {e}")
 
 
 def log_experiment_run(
@@ -171,20 +237,35 @@ def log_experiment_run(
     input_example = None
     if X_sample is not None and y_pred_sample is not None:
         try:
-            signature = mlflow.models.infer_signature(
-                model_input=X_sample,
+            X_sample_for_signature = _coerce_integer_columns_for_mlflow(X_sample)
+            signature = infer_signature(
+                model_input=X_sample_for_signature,
                 model_output=y_pred_sample,
             )
-            input_example = X_sample.head(1)
+            input_example = X_sample_for_signature.head(1)
         except Exception as e:
             logger.warning(f"Could not infer model signature: {e}")
 
-    logged_model_info = mlflow.sklearn.log_model(
-        sk_model=model,
-        name="model",
-        signature=signature,
-        input_example=input_example,
-    )
+    serialization_format = config.serialization_format
+    if serialization_format == mlflow_sklearn.SERIALIZATION_FORMAT_SKOPS:
+        pip_requirements = mlflow_sklearn.get_default_pip_requirements(include_skops=True)
+    elif serialization_format == mlflow_sklearn.SERIALIZATION_FORMAT_CLOUDPICKLE:
+        pip_requirements = mlflow_sklearn.get_default_pip_requirements(include_cloudpickle=True)
+    else:
+        pip_requirements = mlflow_sklearn.get_default_pip_requirements()
+
+    log_model_kwargs: Dict[str, Any] = {
+        "sk_model": model,
+        "name": "model",
+        "serialization_format": serialization_format,
+        "pip_requirements": pip_requirements,
+    }
+    if signature is not None:
+        log_model_kwargs["signature"] = signature
+    if input_example is not None:
+        log_model_kwargs["input_example"] = input_example
+
+    logged_model_info = mlflow_sklearn.log_model(**log_model_kwargs)
 
     model_uri = logged_model_info.model_uri
     logger.info(

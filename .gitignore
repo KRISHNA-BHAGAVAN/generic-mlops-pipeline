@@ -227,3 +227,6 @@ scheduler_jobs.db-*
 
 # Agent / IDE local rules
 .agents/
+
+# dev files for temporary testing, not intended to be committed
+temp.py

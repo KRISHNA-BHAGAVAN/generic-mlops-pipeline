@@ -29,6 +29,12 @@ class SplitStrategy(str, Enum):
     TEMPORAL = "temporal"
     STRATIFIED = "stratified"
 
+class ModelSerializationFormat(str, Enum):
+    """Supported MLflow sklearn serialization formats."""
+    PICKLE = "pickle"
+    CLOUDPICKLE = "cloudpickle"
+    SKOPS = "skops"
+
 
 # ─── Model-type ↔ task-type mapping ─────────────────────────────────────────
 
@@ -100,9 +106,18 @@ class ExperimentConfig(BaseModel):
 
     # MLflow
     mlflow_tags: Dict[str, str] = Field(default_factory=dict)
+    experiment_description: Optional[str] = None
+    experiment_tags: Dict[str, str] = Field(default_factory=dict)
+    run_name: Optional[str] = None
+    run_description: Optional[str] = None
+    dataset_name: Optional[str] = None
+    dataset_source_uri: Optional[str] = None
+    dataset_context: str = "training"
+    dataset_tags: Dict[str, str] = Field(default_factory=dict)
 
     # Registry
     registry_name: Optional[str] = None
+    serialization_format: ModelSerializationFormat = ModelSerializationFormat.CLOUDPICKLE
 
     model_config = {"use_enum_values": True}
 

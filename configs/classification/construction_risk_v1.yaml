@@ -57,3 +57,4 @@ mlflow_tags:
 
 # Registry
 registry_name: "construction_risk"
+serialization_format: "skops"  # valid: "cloudpickle", "pickle", "skops"

@@ -24,7 +24,12 @@ from src.data.load_data import load_dataset
 from src.data.validate import validate_dataset
 from src.features.build_features import prepare_features, split_data
 from src.models.evaluate import evaluate_model, generate_evaluation_plots
-from src.models.registry import log_experiment_run, log_reference_predictions_artifact, setup_mlflow
+from src.models.registry import (
+    log_dataset_input,
+    log_experiment_run,
+    log_reference_predictions_artifact,
+    setup_mlflow,
+)
 from src.models.train import train_model
 from src.pipelines.exceptions import ConfigError, DatasetError, MLOpsException, ModelError
 from src.utils.logger import get_logger, setup_root_logger
@@ -126,12 +131,24 @@ def main(
 
         # ── Step 6: Setup MLflow ──
         click.echo("\n📡 Step 6: Setting up MLflow...")
-        setup_mlflow(tracking_uri=mlflow_tracking_uri, experiment_name=exp_config.experiment_name)
+        setup_mlflow(
+            tracking_uri=mlflow_tracking_uri,
+            experiment_name=exp_config.experiment_name,
+            experiment_description=exp_config.experiment_description,
+            experiment_tags=exp_config.experiment_tags,
+        )
         click.echo("   ✓ MLflow configured")
 
         # ── Step 7: Train model ──
         click.echo(f"\n🏋️  Step 7: Training {exp_config.model_type}...")
-        mlflow.start_run(run_name=exp_config.experiment_name)
+        mlflow.start_run(
+            run_name=exp_config.run_name or exp_config.experiment_name,
+            tags=exp_config.mlflow_tags or None,
+            description=exp_config.run_description,
+        )
+
+        # ── Step 7b: Log dataset lineage ──
+        log_dataset_input(exp_config, df)
 
         model, metadata = train_model(X_train, y_train, exp_config)
         click.echo(

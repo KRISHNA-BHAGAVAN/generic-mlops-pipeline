@@ -32,8 +32,8 @@ MPLBACKEND=Agg python -m pytest tests/ -v
 ### 2. Train Pipeline (end-to-end)
 
 ```bash
-python -m src.pipelines.train_pipeline \
-    --config configs/regression/construction_duration_v1.yaml --register
+`python -m src.pipelines.train_pipeline \
+    --config configs/regression/construction_duration_v1.yaml --register`
 ```
 
 * **What is this?** This command triggers the entire training lifecycle. It reads the configured YAML file, pulls the dataset, prepares the feature spaces, trains the model, computes evaluation metrics, and the `--register` flag signals MLflow to append the produced model specifically into your tracked model registry after saving plots and configurations.
