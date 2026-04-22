@@ -57,4 +57,10 @@ mlflow_tags:
 
 # Registry
 registry_name: "construction_risk"
+registry_description: "Risk classification candidate for construction safety planning"
+registry_tags:
+  model_family: "random_forest"
+  use_case: "risk_prediction"
+registry_alias: "candidate"
+registry_created_by: "krishna"
 serialization_format: "skops"  # valid: "cloudpickle", "pickle", "skops"

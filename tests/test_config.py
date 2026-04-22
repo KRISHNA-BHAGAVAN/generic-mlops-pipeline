@@ -80,6 +80,22 @@ class TestConfigValidation:
         config = load_config_from_dict(cls_config)
         assert config.task_type == "classification"
 
+    def test_registry_optional_metadata_parses(self):
+        cfg = {
+            **self._base_config,
+            "registry_name": "example_model",
+            "registry_description": "Sample model release candidate",
+            "registry_tags": {"team": "ml", "release": "candidate"},
+            "registry_alias": "staging",
+            "registry_created_by": "tester",
+        }
+        config = load_config_from_dict(cfg)
+        assert config.registry_name == "example_model"
+        assert config.registry_description == "Sample model release candidate"
+        assert config.registry_tags["release"] == "candidate"
+        assert config.registry_alias == "staging"
+        assert config.registry_created_by == "tester"
+
     def test_temporal_split_requires_date_column(self):
         bad = {**self._base_config, "split_strategy": "temporal"}
         with pytest.raises(ConfigError):

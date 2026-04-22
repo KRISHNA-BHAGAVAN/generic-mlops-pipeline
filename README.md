@@ -61,6 +61,14 @@ python -m src.pipelines.train_pipeline \
 # 3. Train + auto-register model
 python -m src.pipelines.train_pipeline \
     --config configs/classification/construction_risk_v1.yaml --register
+
+# 4. Train + auto-register with registry metadata
+python -m src.pipelines.train_pipeline \
+    --config configs/regression/construction_duration_v1.yaml --register \
+    --register-description "Baseline duration model candidate" \
+    --register-alias staging \
+    --register-tag team=engineering \
+    --register-created-by krishna
 ```
 
 ### Model Registration & Promotion
@@ -68,7 +76,11 @@ python -m src.pipelines.train_pipeline \
 ```bash
 # Register from a completed run
 python -m src.pipelines.register_pipeline \
-    --run-id <RUN_ID> --model-name construction_duration --alias champion --approve
+    --run-id <RUN_ID> --model-name construction_duration \
+    --description "Production candidate" \
+    --tag team=engineering --tag stage=candidate \
+    --created-by krishna \
+    --alias champion --approve
 ```
 
 ### Start Inference Service

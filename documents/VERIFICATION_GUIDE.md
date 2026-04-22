@@ -32,17 +32,33 @@ MPLBACKEND=Agg python -m pytest tests/ -v
 ### 2. Train Pipeline (end-to-end)
 
 ```bash
-`python -m src.pipelines.train_pipeline \
-    --config configs/regression/construction_duration_v1.yaml --register`
+python -m src.pipelines.train_pipeline \
+    --config configs/regression/construction_duration_v1.yaml --register
 ```
 
 * **What is this?** This command triggers the entire training lifecycle. It reads the configured YAML file, pulls the dataset, prepares the feature spaces, trains the model, computes evaluation metrics, and the `--register` flag signals MLflow to append the produced model specifically into your tracked model registry after saving plots and configurations.
+* **Optional registry metadata:** use `--register-description`, `--register-alias`, `--register-tag key=value` (repeatable), and `--register-created-by` to attach descriptions and tags during registration. These can also be defined in the experiment config using `registry_description`, `registry_tags`, `registry_alias`, and `registry_created_by`.
 * **Why is it implemented?** It abstracts all the manual notebook procedures into a configurable, production-grade CLI runner that connects models directly to your DagsHub MLflow Tracking instance.
 * **How to verify?** The console will progress through training logs. Go to your DagsHub MLflow UI Tracking page and verify that a new experiment run has been logged, metrics exist, and artifacts (like `confusion_matrix.png` and `config.yaml`) are attached.
 
 ---
 
 ### 3. Register & Promote a Model
+
+```bash
+python -m src.pipelines.register_pipeline \
+    --run-id <RUN_ID> --model-name construction_duration \
+    --description "Production candidate" \
+    --tag team=engineering --tag stage=candidate \
+    --created-by krishna \
+    --alias champion --approve
+```
+
+* **What is this?** This command registers a completed MLflow run into the model registry and optionally attaches metadata and aliases in one step.
+* **Why is it implemented?** It gives teams a declarative way to add descriptive registry metadata and alias a version during registration, which makes model comparison and review easier in MLflow.
+* **How to verify?** Under the "Models" tab in DagsHub MLflow, you should see `construction_duration` with the associated description, tags, created_by metadata, and alias such as `champion`.
+
+---
 
 ```bash
 python -m src.selection.rank_runs \
@@ -68,6 +84,118 @@ uvicorn deployment.app:app --host 0.0.0.0 --port 8000
 * **Why is it implemented?** This mimics production servers. End-users and applications invoke the API server for endpoints like `/predict`, rather than directly triggering Python scripts or notebooks.
 * **How to verify?** Open a new terminal and run `curl http://localhost:8000/health`. You should immediately receive a JSON response saying `{"status": "ok"}` indicating the FastApi app and metrics middleware are up.
 
+#### 4.1 Test All API Endpoints with Postman
+
+Use a Postman environment variable:
+
+- `base_url = http://localhost:8000`
+
+Then test each endpoint in this order:
+
+1. **Health Check**
+
+```http
+GET {{base_url}}/health
+```
+
+Expected result:
+- `200 OK`
+- JSON contains `status: "ok"`, `timestamp`, and `models_loaded`.
+
+2. **Single Prediction**
+
+```http
+POST {{base_url}}/predict
+Content-Type: application/json
+```
+
+```json
+{
+    "features": {
+        "Labor_Required": 14,
+        "Equipment_Units": 6,
+        "Material_Cost_USD": 16789.73,
+        "Start_Constraint": 0,
+        "Resource_Constraint_Score": 0.41,
+        "Site_Constraint_Score": 0.59,
+        "Dependency_Count": 4
+    },
+    "model_name": "construction_duration",
+    "model_alias": "champion"
+}
+```
+
+Expected result:
+- `200 OK`
+- JSON contains `prediction`, `model_name`, `model_version`, `model_uri`, `timestamp`.
+
+3. **Batch Prediction**
+
+```http
+POST {{base_url}}/predict/batch
+Content-Type: application/json
+```
+
+```json
+{
+    "instances": [
+        {
+            "Labor_Required": 14,
+            "Equipment_Units": 6,
+            "Material_Cost_USD": 16789.73,
+            "Start_Constraint": 0,
+            "Resource_Constraint_Score": 0.41,
+            "Site_Constraint_Score": 0.59,
+            "Dependency_Count": 4
+        },
+        {
+            "Labor_Required": 2,
+            "Equipment_Units": 2,
+            "Material_Cost_USD": 16885.80,
+            "Start_Constraint": 5,
+            "Resource_Constraint_Score": 0.75,
+            "Site_Constraint_Score": 0.17,
+            "Dependency_Count": 3
+        }
+    ],
+    "model_name": "construction_duration",
+    "model_alias": "champion"
+}
+```
+
+Expected result:
+- `200 OK`
+- JSON contains `predictions` (array), `count`, `model_name`, `model_version`, `timestamp`.
+
+4. **Model Reload**
+
+```http
+POST {{base_url}}/models/reload?model_name=construction_duration&alias=champion
+```
+
+Expected result:
+- `200 OK`
+- JSON contains `status: "reloaded"` and model identifier.
+
+5. **Prometheus Metrics Endpoint**
+
+```http
+GET {{base_url}}/metrics
+```
+
+Expected result:
+- `200 OK`
+- Plain text metrics output including counters/histograms such as:
+    - `mlops_api_request_total`
+    - `mlops_api_request_duration_seconds`
+    - `mlops_predictions_total`
+    - `mlops_prediction_duration_seconds`
+
+Helpful negative tests (optional):
+- Send `/predict` without `features` and confirm `422` validation error.
+- Send invalid `model_alias` and confirm model-load failure (typically `503`).
+- Send malformed features to observe error metrics and alerts.
+
 ---
 
 ### 5. Start Monitoring Stack
@@ -80,6 +208,65 @@ docker compose -f deployment/docker-compose.yml up -d
 * **Why is it implemented?** An MLOps application must be fully observable 24/7. These core infrastructure components allow real-time analysis of the API and structural drift without halting system operations.
 * **How to verify?** Run `docker ps` to verify that `prometheus`, `grafana`, `alertmanager`, etc. are listed. Then, open `http://localhost:3000` via your browser to view Grafana (default login: admin / admin).
 
+#### 5.1 What to Look for in Prometheus and Grafana
+
+Do you need to set up dashboards manually?
+- **No (local default):** Grafana datasource + dashboards are provisioned automatically by Docker mounts and provisioning files.
+- You only need manual setup if you create custom dashboards or switch to a different datasource/provider.
+
+Prometheus checks (open `http://localhost:9090` -> **Graph**):
+
+1. **Service Up**
+```promql
+up{job="fastapi-service"}
+```
+Should be `1`.
+
+2. **Traffic Rate**
+```promql
+sum(rate(mlops_api_request_total[1m]))
+```
+Should increase when Postman or traffic scripts run.
+
+3. **API Latency (p95)**
+```promql
+histogram_quantile(0.95, rate(mlops_api_request_duration_seconds_bucket[5m]))
+```
+Use this to monitor response-time regressions.
+
+4. **Error Rate**
+```promql
+sum(rate(mlops_api_request_total{status=~"5.."}[5m])) / sum(rate(mlops_api_request_total[5m]))
+```
+Should stay near `0` under healthy traffic.
+
+5. **Prediction Error Events**
+```promql
+increase(mlops_prediction_errors_total[5m])
+```
+Should spike only when intentionally testing failure paths.
+
+Grafana checks (open `http://localhost:3000` -> folder **MLOps**):
+
+1. **MLOps System Health** dashboard
+- Request Rate should rise during testing.
+- API p50/p95/p99 should remain stable.
+- Error Rate should be near zero except during fault injection.
+- Active Requests should move with concurrent load.
+
+2. **MLOps Model Performance** dashboard
+- Inference latency (p50/p95) should track request volume.
+- Predictions per second should rise when calling `/predict` and `/predict/batch`.
+- Models Loaded should become non-zero after first successful inference.
+- Model Load Time may spike during first load or `/models/reload`.
+
+3. **MLOps Data Drift Detection** dashboard
+- `Data Drift Status` and `Drifted Columns Count` update after running batch monitor or drift-trigger script.
+- Use this to validate drift monitoring + alerting pipeline end-to-end.
+
+Alert behavior to validate:
+- Run `python scripts/trigger_test_alerts.py --type all` and confirm corresponding Prometheus alert rules transition to `Firing` after their `for` duration.
+
 ---
 
 ### 6. Generate Traffic & Trigger Alerts
@@ -88,7 +275,6 @@ docker compose -f deployment/docker-compose.yml up -d
 python scripts/generate_traffic.py --num-requests 100
 python scripts/trigger_test_alerts.py --type all
 ```
-
 * **What is this?** The `generate_traffic.py` script attempts to hit your API with hundreds of randomized feature bounds to mimic chaotic user activity. `trigger_test_alerts.py` pushes deliberately malformed payloads to force 500 API crash errors, additionally pushing dummy threshold data explicitly into the Pushgateway to induce metrics-derived Drift Alerting signals.
 * **Why is it implemented?** Testing dashboards manually via `curl` requests is incredibly painful. This handles creating anomalies autonomously so developers can confirm metric displays function accurately and Slack connection hooks resolve seamlessly in `AlertManager`.
 * **How to verify?** Load up the Grafana **System Health** dashboard and **Model Performance** dashboard. You should visibly notice the API volume rising accompanied by an instant surge of 500-level prediction failures occurring sequentially.

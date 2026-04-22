@@ -36,6 +36,14 @@ class ModelSerializationFormat(str, Enum):
     SKOPS = "skops"
 
 
+class RegistryAlias(str, Enum):
+    """Supported registry alias names for MLflow model versions."""
+    CHAMPION = "champion"
+    CANDIDATE = "candidate"
+    STAGING = "staging"
+    PRODUCTION = "production"
+
+
 # ─── Model-type ↔ task-type mapping ─────────────────────────────────────────
 
 ALLOWED_MODELS: dict[str, list[str]] = {
@@ -117,6 +125,10 @@ class ExperimentConfig(BaseModel):
 
     # Registry
     registry_name: Optional[str] = None
+    registry_description: Optional[str] = None
+    registry_tags: Dict[str, str] = Field(default_factory=dict)
+    registry_alias: Optional[RegistryAlias] = None
+    registry_created_by: Optional[str] = None
     serialization_format: ModelSerializationFormat = ModelSerializationFormat.CLOUDPICKLE
 
     model_config = {"use_enum_values": True}

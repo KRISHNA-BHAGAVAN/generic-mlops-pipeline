@@ -37,6 +37,18 @@ from src.utils.logger import get_logger, setup_root_logger
 logger = get_logger(__name__)
 
 
+def _parse_key_value_pairs(pairs: tuple[str, ...]) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for pair in pairs:
+        if "=" not in pair:
+            raise click.UsageError(
+                "Registry tags must be provided as key=value pairs."
+            )
+        key, value = pair.split("=", 1)
+        parsed[key.strip()] = value.strip()
+    return parsed
+
+
 @click.command()
 @click.option(
     "--config",
@@ -61,11 +73,37 @@ logger = get_logger(__name__)
     is_flag=True,
     help="Auto-register the trained model if experiment succeeds",
 )
+@click.option(
+    "--register-description",
+    default=None,
+    help="Optional description for the registered model version",
+)
+@click.option(
+    "--register-alias",
+    type=click.Choice(["champion", "candidate", "staging", "production"]),
+    default=None,
+    help="Optional alias to assign after registration",
+)
+@click.option(
+    "--register-tag",
+    "register_tags",
+    multiple=True,
+    help="Optional registry tag in key=value format (can be repeated)",
+)
+@click.option(
+    "--register-created-by",
+    default=None,
+    help="Optional created_by metadata for the registered model version",
+)
 def main(
     config_path: str,
     mlflow_tracking_uri: str | None,
     dry_run: bool,
     register: bool,
+    register_description: str | None,
+    register_alias: str | None,
+    register_tags: tuple[str, ...],
+    register_created_by: str | None,
 ):
     """
     Run a machine learning experiment.
@@ -182,12 +220,36 @@ def main(
         # ── Step 11: Optional registration ──
         if register and exp_config.registry_name:
             click.echo("📦 Step 11: Registering model...")
-            from src.models.registry import register_model
-            model_version = register_model(model_uri, exp_config.registry_name)
+            from src.models.registry import register_model, promote_model
+
+            model_version = register_model(
+                model_uri,
+                exp_config.registry_name,
+                description=register_description or exp_config.registry_description,
+                version_tags=(
+                    _parse_key_value_pairs(register_tags)
+                    if register_tags
+                    else exp_config.registry_tags or None
+                ),
+                registered_model_tags=(
+                    _parse_key_value_pairs(register_tags)
+                    if register_tags
+                    else exp_config.registry_tags or None
+                ),
+                created_by=register_created_by or exp_config.registry_created_by or exp_config.user,
+            )
             click.echo(
                 f"   ✓ Registered: {exp_config.registry_name} "
                 f"v{model_version.version}"
             )
+
+            alias = register_alias or exp_config.registry_alias
+            if alias:
+                promote_model(exp_config.registry_name, model_version.version, alias)
+                click.echo(
+                    f"   ✓ Promoted: {exp_config.registry_name} "
+                    f"v{model_version.version} → '{alias}'"
+                )
 
         mlflow.end_run()
 

@@ -31,6 +31,8 @@ services:
     environment:
       APP_PORT: 8000
       LOG_LEVEL: INFO
+      # Inside Docker, PostgreSQL is reachable via service hostname `postgres`.
+      PREDICTION_DB_URL: postgresql+psycopg://${DB_USER:-mlops}:${DB_PASSWORD:-mlops}@postgres:${DB_PORT:-5432}/${DB_NAME:-mlops}
     volumes:
       - ../src:/app/src
       - ../deployment/app.py:/app/deployment/app.py

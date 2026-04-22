@@ -41,9 +41,7 @@ requests_in_progress = Gauge(
     ["method", "endpoint"],
 )
 
-
 # ─── MODEL INFERENCE METRICS ──────────────────────────────────────────────
-
 prediction_latency = Histogram(
     "mlops_prediction_duration_seconds",
     "Model inference latency in seconds",

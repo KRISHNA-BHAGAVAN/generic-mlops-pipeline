@@ -50,7 +50,31 @@ logger = get_logger(__name__)
 
 _model_cache: Dict[str, Any] = {}
 _model_versions: Dict[str, str] = {}
+_model_uris: Dict[str, str] = {}
 _prediction_logger: PredictionLogger | None = None
+
+
+def _coerce_feature_types(features: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize payload feature types for stricter model signatures."""
+    normalized: Dict[str, Any] = {}
+    for key, value in features.items():
+        if isinstance(value, bool):
+            normalized[key] = value
+        elif isinstance(value, int):
+            normalized[key] = float(value)
+        else:
+            normalized[key] = value
+    return normalized
+
+
+def _build_model_uri(model_name: str, alias: str) -> str:
+    """Build an MLflow models:/ URI for alias-based loading."""
+    return f"models:/{model_name}@{alias}"
+
+
+def _build_version_uri(model_name: str, version: str) -> str:
+    """Build an MLflow models:/ URI for a concrete model version."""
+    return f"models:/{model_name}/{version}"
 
 
 # ─── Model loading ─────────────────────────────────────────────────────────
@@ -78,27 +102,58 @@ def _load_model_sync(model_name: str, alias: str = "champion") -> Any:
     try:
         import mlflow.pyfunc
 
-        model_uri = f"models:/{model_name}@{alias}"
-        model = mlflow.pyfunc.load_model(model_uri)
-        _model_cache[cache_key] = model
+        model_uri = _build_model_uri(model_name, alias)
+        resolved_uri = model_uri
+        model_version = "unknown"
 
-        # Try to get version info
         try:
+            model = mlflow.pyfunc.load_model(model_uri)
+            # Try to get version info for true MLflow aliases.
+            try:
+                import mlflow
+                client = mlflow.tracking.MlflowClient()
+                version_info = client.get_model_version_by_alias(model_name, alias)
+                model_version = str(version_info.version)
+            except Exception:
+                model_version = "unknown"
+        except Exception as alias_error:
+            # Fallback for registries where alias is stored as metadata/tag,
+            # not as a first-class MLflow model alias.
             import mlflow
-            client = mlflow.tracking.MlflowClient()
-            version_info = client.get_model_version_by_alias(model_name, alias)
-            _model_versions[cache_key] = str(version_info.version)
-        except Exception:
-            _model_versions[cache_key] = "unknown"
 
-        # Record metrics
+            client = mlflow.tracking.MlflowClient()
+            models = client.search_registered_models(filter_string=f"name='{model_name}'")
+            if not models:
+                raise alias_error
+
+            registered = models[0]
+            alias_tag = (registered.tags or {}).get("alias")
+            if alias_tag and alias_tag != alias:
+                raise alias_error
+
+            latest_versions = [int(v.version) for v in getattr(registered, "latest_versions", []) if str(v.version).isdigit()]
+            if not latest_versions:
+                raise alias_error
+
+            model_version = str(max(latest_versions))
+            resolved_uri = _build_version_uri(model_name, model_version)
+            model = mlflow.pyfunc.load_model(resolved_uri)
+
+            logger.warning(
+                f"Alias-based model URI not supported for {model_name}@{alias}; "
+                f"falling back to latest version v{model_version}."
+            )
+
+        _model_cache[cache_key] = model
+        _model_versions[cache_key] = model_version
+        _model_uris[cache_key] = resolved_uri
         load_duration = time.time() - start_time
         model_load_time.labels(model_name=model_name).observe(load_duration)
         models_loaded.labels(model_name=model_name).set(1)
 
         logger.info(
             f"Model loaded: {cache_key} "
-            f"(v{_model_versions[cache_key]}, {load_duration:.2f}s)"
+            f"(v{_model_versions[cache_key]}, {load_duration:.2f}s, uri={_model_uris[cache_key]})"
         )
         return model
 
@@ -173,8 +228,9 @@ async def predict(request: PredictionRequest) -> PredictionResponse:
         model = _load_model_sync(model_name, alias)
         model_version = _model_versions.get(cache_key, "unknown")
 
-        # Convert features to DataFrame
-        X = pd.DataFrame([request.features])
+        # Convert features to DataFrame with numeric type normalization.
+        normalized_features = _coerce_feature_types(request.features)
+        X = pd.DataFrame([normalized_features])
 
         # Run inference
         inference_start = time.time()
@@ -212,7 +268,7 @@ async def predict(request: PredictionRequest) -> PredictionResponse:
             _prediction_logger.log_prediction(
                 model_name=model_name,
                 model_version=model_version,
-                features=request.features,
+                features=normalized_features,
                 prediction=prediction_value,
                 latency_seconds=total_latency,
             )
@@ -221,7 +277,7 @@ async def predict(request: PredictionRequest) -> PredictionResponse:
             prediction=prediction_value,
             model_name=model_name,
             model_version=model_version,
-            model_uri=f"models:/{model_name}@{alias}",
+            model_uri=_model_uris.get(cache_key, _build_model_uri(model_name, alias)),
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -251,7 +307,8 @@ async def predict_batch(request: BatchPredictionRequest) -> BatchPredictionRespo
         model = _load_model_sync(model_name, alias)
         model_version = _model_versions.get(cache_key, "unknown")
 
-        X = pd.DataFrame(request.instances)
+        normalized_instances = [_coerce_feature_types(instance) for instance in request.instances]
+        X = pd.DataFrame(normalized_instances)
 
         start_time = time.time()
         raw_predictions = model.predict(X)

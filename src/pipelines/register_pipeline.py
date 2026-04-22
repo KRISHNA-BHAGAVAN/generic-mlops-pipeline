@@ -27,6 +27,18 @@ from src.models.registry import (
 )
 from src.utils.logger import get_logger, setup_root_logger
 
+
+def _parse_key_value_pairs(pairs: tuple[str, ...]) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for pair in pairs:
+        if "=" not in pair:
+            raise click.UsageError(
+                "Registry tags must be provided as key=value pairs."
+            )
+        key, value = pair.split("=", 1)
+        parsed[key.strip()] = value.strip()
+    return parsed
+
 logger = get_logger(__name__)
 
 
@@ -37,8 +49,24 @@ logger = get_logger(__name__)
 @click.option(
     "--alias",
     default=None,
-    type=click.Choice(["champion", "candidate", "staging"]),
+    type=click.Choice(["champion", "candidate", "staging", "production"]),
     help="Optional alias to assign",
+)
+@click.option(
+    "--description",
+    default=None,
+    help="Optional model registry description",
+)
+@click.option(
+    "--tag",
+    "tags",
+    multiple=True,
+    help="Optional registry tag in key=value format (can be repeated)",
+)
+@click.option(
+    "--created-by",
+    default=None,
+    help="Optional created_by metadata for the registered model version",
 )
 @click.option("--approve/--no-approve", default=False, help="Mark as approved")
 @click.option("--mlflow-tracking-uri", default=None, help="MLflow tracking URI")
@@ -47,6 +75,9 @@ def main(
     run_id: str | None,
     model_name: str,
     alias: str | None,
+    description: str | None,
+    tags: tuple[str, ...],
+    created_by: str | None,
     approve: bool,
     mlflow_tracking_uri: str | None,
 ):
@@ -82,7 +113,14 @@ def main(
         click.echo(f"   ✓ Resolved model URI: {model_uri}")
 
     # Register
-    model_version = register_model(model_uri, model_name)
+    model_version = register_model(
+        model_uri,
+        model_name,
+        description=description,
+        version_tags=_parse_key_value_pairs(tags) if tags else None,
+        registered_model_tags=_parse_key_value_pairs(tags) if tags else None,
+        created_by=created_by,
+    )
     click.echo(
         f"   ✓ Registered: {model_name} v{model_version.version}"
     )

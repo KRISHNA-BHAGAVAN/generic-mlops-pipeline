@@ -243,8 +243,16 @@ def log_experiment_run(
                 model_output=y_pred_sample,
             )
             input_example = X_sample_for_signature.head(1)
+            logger.info(
+                "MLflow model signature and input_example prepared for logging."
+            )
         except Exception as e:
             logger.warning(f"Could not infer model signature: {e}")
+    else:
+        logger.warning(
+            "No training sample available for model signature inference. "
+            "Model schema will not be recorded in MLflow."
+        )
 
     serialization_format = config.serialization_format
     if serialization_format == mlflow_sklearn.SERIALIZATION_FORMAT_SKOPS:
@@ -267,11 +275,14 @@ def log_experiment_run(
 
     logged_model_info = mlflow_sklearn.log_model(**log_model_kwargs)
 
-    model_uri = logged_model_info.model_uri
+    # Use the known run artifact path for registration, which is more
+    # compatible with some MLflow UIs and registry backends than the
+    # internal models:/m-<hash> URI returned by log_model.
+    model_uri = f"runs:/{run_id}/model"
     logger.info(
         f"Run {run_id} logged: "
         f"{len(metrics)} metrics, {len(evaluation_plots)} plots "
-        f"(model_uri={model_uri})"
+        f"(logged_uri={logged_model_info.model_uri}, register_uri={model_uri})"
     )
     return run_id, model_uri
 
@@ -423,9 +434,47 @@ def resolve_model_uri_from_run(run_id: str) -> str:
     return model_uri
 
 
+def _set_registered_model_tags(
+    client: MlflowClient,
+    model_name: str,
+    tags: Dict[str, str],
+) -> None:
+    for key, value in tags.items():
+        try:
+            client.set_registered_model_tag(name=model_name, key=key, value=value)
+        except Exception as e:
+            logger.warning(
+                f"Could not set registered model tag '{key}': {e}"
+            )
+
+
+def _set_model_version_tags(
+    client: MlflowClient,
+    model_name: str,
+    version: str,
+    tags: Dict[str, str],
+) -> None:
+    for key, value in tags.items():
+        try:
+            client.set_model_version_tag(
+                name=model_name,
+                version=version,
+                key=key,
+                value=value,
+            )
+        except Exception as e:
+            logger.warning(
+                f"Could not set model version tag '{key}' for {model_name} v{version}: {e}"
+            )
+
+
 def register_model(
     model_uri: str,
     model_name: str,
+    description: str | None = None,
+    version_tags: Dict[str, str] | None = None,
+    registered_model_tags: Dict[str, str] | None = None,
+    created_by: str | None = None,
     client: MlflowClient | None = None,
 ) -> Any:
     """
@@ -435,6 +484,10 @@ def register_model(
         model_uri: Model URI returned by mlflow.sklearn.log_model()
                    (e.g. 'runs:/<run_id>/model' or a models:/ URI).
         model_name: Name for the registered model.
+        description: Optional text for the model version and registered model.
+        version_tags: Optional tags to attach to the registered model version.
+        registered_model_tags: Optional tags to attach to the registered model.
+        created_by: Optional created_by metadata for the model version.
         client: MLflowClient instance (created if None).
 
     Returns:
@@ -458,6 +511,41 @@ def register_model(
         key="validation_status",
         value="pending",
     )
+
+    if description:
+        try:
+            client.update_model_version(
+                name=model_name,
+                version=str(model_version.version),
+                description=description,
+            )
+            client.update_registered_model(
+                name=model_name,
+                description=description,
+            )
+        except Exception as e:
+            logger.warning(
+                f"Could not update registry description for {model_name}: {e}"
+            )
+
+    if created_by:
+        try:
+            client.set_model_version_tag(
+                name=model_name,
+                version=str(model_version.version),
+                key="created_by",
+                value=created_by,
+            )
+        except Exception as e:
+            logger.warning(
+                f"Could not set created_by tag for {model_name} v{model_version.version}: {e}"
+            )
+
+    if version_tags:
+        _set_model_version_tags(client, model_name, str(model_version.version), version_tags)
+
+    if registered_model_tags:
+        _set_registered_model_tags(client, model_name, registered_model_tags)
 
     logger.info(
         f"Model registered: {model_name} v{model_version.version} "

@@ -214,6 +214,7 @@ __marimo__/
 # MLflow (local tracking fallback)
 mlruns/
 mlartifacts/
+tmp_mlflow/
 
 # Runtime artifacts
 predictions.db
